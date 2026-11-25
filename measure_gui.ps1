@@ -10,8 +10,18 @@ $ErrorActionPreference = "Stop"
 
 $script:Base = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:Data = Join-Path $script:Base "data"
-$script:MasterCsv = Join-Path $script:Data "master.csv"
+$script:OutDir = $script:Data
 $script:Config = Join-Path $script:Data "config.json"
+
+function Get-MasterCsv { Join-Path $script:OutDir "master.csv" }
+
+function Save-Config {
+    try {
+        if (-not (Test-Path $script:Data)) { New-Item -ItemType Directory -Path $script:Data | Out-Null }
+        @{ operator = $tbOperator.Text.Trim(); out_dir = $script:OutDir } |
+            ConvertTo-Json | Set-Content -Path $script:Config -Encoding UTF8
+    } catch {}
+}
 
 # Ищем настоящий python (не заглушку Microsoft Store из WindowsApps).
 # Можно задать свой путь переменной окружения UI2058_PYTHON.
@@ -44,9 +54,10 @@ if (-not (Test-Path $script:Measure)) {
 
 function Get-NextTest {
     param([string]$article, [string]$sample)
-    if (-not (Test-Path $script:MasterCsv)) { return 1 }
+    $csv = Get-MasterCsv
+    if (-not (Test-Path $csv)) { return 1 }
     try {
-        $rows = @(Import-Csv -Path $script:MasterCsv -Encoding UTF8)
+        $rows = @(Import-Csv -Path $csv -Encoding UTF8)
         $sel = @($rows | Where-Object { $_.'Артикул' -eq $article -and $_.'Образец' -eq $sample })
         if ($sel.Count -gt 0) {
             $mx = ($sel | ForEach-Object { [int]$_.'Тест №' } | Measure-Object -Maximum).Maximum
@@ -102,9 +113,15 @@ $gb1.Controls.Add($btnAuto)
 $tbOperator = Add-Text $gb1 "Оператор" 15 86 270
 $tbComment  = Add-Text $gb1 "Комментарий" 300 86 285
 
-Add-Label $gb1 "Кнопка «№ авто» подставляет следующий номер для этого артикула и образца." 15 146
-$lblHint = $gb1.Controls[$gb1.Controls.Count - 1]
-$lblHint.ForeColor = [System.Drawing.Color]::Gray
+$lblPath = New-Object System.Windows.Forms.Label
+$lblPath.Location = New-Object System.Drawing.Point(15, 146)
+$lblPath.Size = New-Object System.Drawing.Size(570, 18)
+$lblPath.AutoEllipsis = $true
+$lblPath.ForeColor = [System.Drawing.Color]::Gray
+$gb1.Controls.Add($lblPath)
+
+$script:Tip = New-Object System.Windows.Forms.ToolTip
+$script:Tip.SetToolTip($btnAuto, "Подставляет следующий номер теста для этой пары артикул+образец")
 
 # --- группа "Замер" ---
 $gb2 = New-Object System.Windows.Forms.GroupBox
@@ -168,7 +185,7 @@ $btnCopy.Size = New-Object System.Drawing.Size(145, 34)
 $form.Controls.Add($btnCopy)
 
 $btnFolder = New-Object System.Windows.Forms.Button
-$btnFolder.Text = "Папка данных"
+$btnFolder.Text = "Папка замеров"
 $btnFolder.Location = New-Object System.Drawing.Point(165, 856)
 $btnFolder.Size = New-Object System.Drawing.Size(142, 34)
 $form.Controls.Add($btnFolder)
@@ -193,16 +210,35 @@ $btnAuto.Add_Click({
 })
 
 $btnFolder.Add_Click({
-    $p = Join-Path $script:Data "records"
-    if (Test-Path $p) { Start-Process explorer.exe $p }
-    else { Start-Process explorer.exe $script:Data }
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = "Куда сохранять замеры"
+    $dlg.ShowNewFolderButton = $true
+    if (Test-Path $script:OutDir) { $dlg.SelectedPath = $script:OutDir }
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $script:OutDir = $dlg.SelectedPath
+        $lblPath.Text = "Замеры: " + $script:OutDir
+        Save-Config
+        $lblStatus.Text = "Папка замеров: " + $script:OutDir
+        $lblStatus.ForeColor = [System.Drawing.Color]::ForestGreen
+    }
 })
 
+$script:MenuOpen = New-Object System.Windows.Forms.ContextMenuStrip
+$miOpen = New-Object System.Windows.Forms.ToolStripMenuItem "Открыть папку замеров"
+$miOpen.Add_Click({
+    if (Test-Path $script:OutDir) { Start-Process explorer.exe $script:OutDir }
+    else { [System.Windows.Forms.MessageBox]::Show("Папка не найдена: $($script:OutDir)", "UI2058 замер") | Out-Null }
+})
+[void]$script:MenuOpen.Items.Add($miOpen)
+$btnFolder.ContextMenuStrip = $script:MenuOpen
+$script:Tip.SetToolTip($btnFolder, "Куда сохранять замеры. Правый клик - открыть текущую папку")
+
 $btnTable.Add_Click({
-    $x = Join-Path $script:Data "master.xlsx"
+    $x = Join-Path $script:OutDir "master.xlsx"
+    $csv = Get-MasterCsv
     if (Test-Path $x) { Start-Process $x }
-    elseif (Test-Path $script:MasterCsv) { Start-Process $script:MasterCsv }
-    else { [System.Windows.Forms.MessageBox]::Show("Таблицы пока нет - сделайте первый замер.", "UI2058 замер") | Out-Null }
+    elseif (Test-Path $csv) { Start-Process $csv }
+    else { [System.Windows.Forms.MessageBox]::Show("В этой папке пока нет замеров.`n`n$($script:OutDir)", "UI2058 замер") | Out-Null }
 })
 
 $btnLast.Add_Click({
@@ -211,12 +247,13 @@ $btnLast.Add_Click({
 })
 
 $btnCopy.Add_Click({
-    if (-not (Test-Path $script:MasterCsv)) {
-        [System.Windows.Forms.MessageBox]::Show("Ещё не было замера.", "UI2058 замер") | Out-Null
+    $csv = Get-MasterCsv
+    if (-not (Test-Path $csv)) {
+        [System.Windows.Forms.MessageBox]::Show("В этой папке пока нет замеров.`n`n$($script:OutDir)", "UI2058 замер") | Out-Null
         return
     }
     try {
-        $rows = @(Import-Csv -Path $script:MasterCsv -Encoding UTF8)
+        $rows = @(Import-Csv -Path $csv -Encoding UTF8)
         if ($rows.Count -eq 0) { throw "таблица пуста" }
         $last = $rows[$rows.Count - 1]
         $cells = @($last.PSObject.Properties | ForEach-Object { [string]$_.Value })
@@ -249,7 +286,7 @@ $btnRun.Add_Click({
     $a = @($script:Measure, "--article", $article, "--sample", $sample,
            "--test", $test, "--operator", $tbOperator.Text.Trim(),
            "--comment", $tbComment.Text.Trim(), "--cycles", [string][int]$numCycles.Value,
-           "--json-out", $tmp)
+           "--out-dir", $script:OutDir, "--json-out", $tmp)
     if ($chkWave.Checked) { $a += "--wave" }
 
     $procOut = ""
@@ -337,14 +374,17 @@ if (Test-Path $script:Config) {
     try {
         $cfg = Get-Content -Raw -Encoding UTF8 $script:Config | ConvertFrom-Json
         if ($cfg.operator) { $tbOperator.Text = $cfg.operator }
+        if ($cfg.out_dir) {
+            if (Test-Path $cfg.out_dir) { $script:OutDir = $cfg.out_dir }
+            else {
+                $lblStatus.Text = "Папка замеров недоступна, сохраняю в data."
+                $lblStatus.ForeColor = [System.Drawing.Color]::Firebrick
+            }
+        }
     } catch {}
 }
+$lblPath.Text = "Замеры: " + $script:OutDir
 
-$form.Add_FormClosed({
-    try {
-        if (-not (Test-Path $script:Data)) { New-Item -ItemType Directory -Path $script:Data | Out-Null }
-        @{ operator = $tbOperator.Text.Trim() } | ConvertTo-Json | Set-Content -Path $script:Config -Encoding UTF8
-    } catch {}
-})
+$form.Add_FormClosed({ Save-Config })
 
 [void]$form.ShowDialog()

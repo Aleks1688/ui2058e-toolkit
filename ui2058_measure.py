@@ -31,6 +31,14 @@ DATA = os.path.join(HERE, "data")
 RECORDS = os.path.join(DATA, "records")
 WAVES = os.path.join(DATA, "waves")
 
+
+def set_out_dir(path):
+    """Куда писать замеры. По умолчанию data рядом со скриптом."""
+    global DATA, RECORDS, WAVES
+    DATA = os.path.abspath(path)
+    RECORDS = os.path.join(DATA, "records")
+    WAVES = os.path.join(DATA, "waves")
+
 N = 256
 HARM = [2, 3, 5, 7, 9, 11]
 _COS = {k: [math.cos(2 * math.pi * k * n / N) for n in range(N)] for k in range(1, 41)}
@@ -79,6 +87,26 @@ def detect_port():
     except Exception:
         pass
     return "COM7"
+
+
+def port_present(port):
+    """Есть ли такой COM-порт в системе (адаптер подключён и включён)."""
+    try:
+        import winreg
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DEVICEMAP\SERIALCOMM")
+        names = []
+        i = 0
+        while True:
+            try:
+                _, val, _ = winreg.EnumValue(k, i)
+            except OSError:
+                break
+            names.append(str(val).upper())
+            i += 1
+        winreg.CloseKey(k)
+        return port.upper() in names
+    except Exception:
+        return True  # не смогли проверить - не мешаем
 
 
 def sanitize(s, default="x"):
@@ -275,6 +303,7 @@ def run(args):
         "record": rec_path,
         "master_csv": master_csv,
         "master_xlsx": master_xlsx,
+        "out_dir": DATA,
     }
 
 
@@ -287,6 +316,7 @@ def main():
     ap.add_argument("--operator", default="")
     ap.add_argument("--comment", default="")
     ap.add_argument("--cycles", type=int, default=3)
+    ap.add_argument("--out-dir", default="", help="куда писать замеры (по умолчанию data рядом со скриптом)")
     ap.add_argument("--wave", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--json-out", default="", help="write JSON result to this file (UTF-8)")
@@ -297,6 +327,20 @@ def main():
         args.cycles = 20
     if not args.port:
         args.port = detect_port()
+    if args.out_dir:
+        set_out_dir(args.out_dir)
+    else:
+        set_out_dir(DATA)
+
+    if not port_present(args.port):
+        msg = ("порт %s не найден: прибор не подключён или USB-адаптер отключён "
+               "в диспетчере устройств." % args.port)
+        out = {"ok": False, "error": msg}
+        if args.json_out:
+            with open(args.json_out, "w", encoding="utf-8") as f:
+                json.dump(out, f, ensure_ascii=False)
+        print(json.dumps(out, ensure_ascii=False) if args.json else "ОШИБКА: " + msg)
+        sys.exit(1)
 
     try:
         res = run(args)
