@@ -145,6 +145,12 @@ $chkWave.Location = New-Object System.Drawing.Point(170, 23)
 $chkWave.AutoSize = $true
 $gb2.Controls.Add($chkWave)
 
+$btnFolder = New-Object System.Windows.Forms.Button
+$btnFolder.Text = "Папка замеров"
+$btnFolder.Location = New-Object System.Drawing.Point(400, 19)
+$btnFolder.Size = New-Object System.Drawing.Size(185, 30)
+$gb2.Controls.Add($btnFolder)
+
 $btnRun = New-Object System.Windows.Forms.Button
 $btnRun.Text = "СНЯТЬ ДАННЫЕ С ПРИБОРА"
 $btnRun.Location = New-Object System.Drawing.Point(15, 56)
@@ -181,25 +187,19 @@ $form.Controls.Add($lblStatus)
 $btnCopy = New-Object System.Windows.Forms.Button
 $btnCopy.Text = "Копировать строку"
 $btnCopy.Location = New-Object System.Drawing.Point(12, 856)
-$btnCopy.Size = New-Object System.Drawing.Size(145, 34)
+$btnCopy.Size = New-Object System.Drawing.Size(192, 34)
 $form.Controls.Add($btnCopy)
-
-$btnFolder = New-Object System.Windows.Forms.Button
-$btnFolder.Text = "Папка замеров"
-$btnFolder.Location = New-Object System.Drawing.Point(165, 856)
-$btnFolder.Size = New-Object System.Drawing.Size(142, 34)
-$form.Controls.Add($btnFolder)
 
 $btnTable = New-Object System.Windows.Forms.Button
 $btnTable.Text = "Общая таблица"
-$btnTable.Location = New-Object System.Drawing.Point(315, 856)
-$btnTable.Size = New-Object System.Drawing.Size(142, 34)
+$btnTable.Location = New-Object System.Drawing.Point(216, 856)
+$btnTable.Size = New-Object System.Drawing.Size(192, 34)
 $form.Controls.Add($btnTable)
 
 $btnLast = New-Object System.Windows.Forms.Button
 $btnLast.Text = "Файл замера"
-$btnLast.Location = New-Object System.Drawing.Point(465, 856)
-$btnLast.Size = New-Object System.Drawing.Size(147, 34)
+$btnLast.Location = New-Object System.Drawing.Point(420, 856)
+$btnLast.Size = New-Object System.Drawing.Size(192, 34)
 $form.Controls.Add($btnLast)
 
 $script:LastRecord = ""
@@ -217,6 +217,7 @@ $btnFolder.Add_Click({
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $script:OutDir = $dlg.SelectedPath
         $lblPath.Text = "Замеры: " + $script:OutDir
+        $script:Tip.SetToolTip($lblPath, $script:OutDir)
         Save-Config
         $lblStatus.Text = "Папка замеров: " + $script:OutDir
         $lblStatus.ForeColor = [System.Drawing.Color]::ForestGreen
@@ -384,6 +385,7 @@ if (Test-Path $script:Config) {
     } catch {}
 }
 $lblPath.Text = "Замеры: " + $script:OutDir
+$script:Tip.SetToolTip($lblPath, $script:OutDir)
 
 $form.Add_FormClosed({ Save-Config })
 
